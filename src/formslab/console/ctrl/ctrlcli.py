@@ -1,0 +1,377 @@
+"""
+Refactored ctrlcli.py
+- Unified execute_command to dynamically dispatch based on a command map.
+- Removed use of rich.Panel in help to simplify plain-text output (avoiding "panels").
+- Uses CLIResult exclusively for all responses.
+- No direct printing in handlers; __main__ prints rendered content.
+- Prepared for easy addition of new commands by extending COMMANDS dict.
+
+Next steps:
+- In app/view/console_tab.py, remove the special-case for "--run" and let session.handle(raw) handle it like other commands.
+- Ensure fconsole.py integrates CLIResult.content directly via render_output.
+"""
+from pathlib import Path
+import os, sys, signal, subprocess
+
+from rich.text import Text
+from formslab.console.sessions.base import CLIResult
+from formslab.console.ctrl.ctrlutils import ReadCommand, WriteCommand, LoadCommands, process_exists
+from formslab.console.style import HEADER, DIM, INFO, NUMBER, LABEL, TEXT, WARNING, SUCCESS
+from formslab.state import CTRL_STATE_PATH
+
+# Mission discovery.
+#
+# NOT YET RESOLVED after the extraction. `missions/` and `sequence.py` are
+# FORMS workspace concepts that this path used to reach by walking up out of
+# `python/cli/ctrl/`; from an installed package there is nothing above to walk
+# to. `run` and `missions` therefore report an empty library rather than
+# launching anything. Both come back when the sequence host moves over, at
+# which point this resolves through the workspace, not through `__file__`.
+MISSIONS_DIR = Path(__file__).resolve().parents[2] / "missions"
+
+# Constants
+CTRLFILE = CTRL_STATE_PATH
+
+
+def _parse_zen_header(path: Path) -> dict:
+    """Extract mission metadata from .zen file comments and config."""
+    meta = {}
+    try:
+        content = path.read_text()
+        for line in content.split('\n')[:50]:
+            line = line.strip()
+            if line.startswith('#'):
+                lower = line.lower()
+                if 'mission:' in lower:
+                    meta['mission'] = line.split(':', 1)[1].strip()
+                elif 'author:' in lower:
+                    meta['author'] = line.split(':', 1)[1].strip()
+            elif line.startswith('satellite.name'):
+                val = line.split('=', 1)[1].strip().strip('"\'')
+                meta['satellite'] = val
+            elif line.startswith('time.duration'):
+                meta['duration'] = line.split('=', 1)[1].strip()
+            elif line.startswith('time.units'):
+                meta['units'] = line.split('=', 1)[1].strip().strip('"\'')
+    except Exception:
+        pass
+    return meta
+
+
+def discover_missions() -> list[dict]:
+    """Discover .zen mission files with metadata."""
+    missions = []
+    if not MISSIONS_DIR.exists():
+        return missions
+    for zen_path in sorted(MISSIONS_DIR.glob("*.zen")):
+        meta = _parse_zen_header(zen_path)
+        missions.append({
+            "name": zen_path.stem,
+            "path": str(zen_path),
+            "satellite": meta.get("satellite"),
+            "duration": meta.get("duration"),
+            "units": meta.get("units"),
+        })
+    return missions
+
+
+def _resolve_mission(target: str, missions: list[dict]) -> dict | None:
+    """Resolve mission by name or index."""
+    # Try numeric index first
+    if target.isdigit():
+        idx = int(target) - 1
+        if 0 <= idx < len(missions):
+            return missions[idx]
+        return None
+
+    # Try exact name match
+    for m in missions:
+        if m['name'].lower() == target.lower():
+            return m
+
+    # Try partial match
+    matches = [m for m in missions if target.lower() in m['name'].lower()]
+    if len(matches) == 1:
+        return matches[0]
+
+    return None
+
+
+def missions_command() -> CLIResult:
+    """List available mission files and operational modes."""
+    result = Text()
+
+    result.append("MISSIONS\n", HEADER)
+    result.append("═" * 60 + "\n\n", DIM)
+
+    missions = discover_missions()
+
+    if not missions:
+        result.append("  No .zen files found in missions/\n", DIM)
+    else:
+        # Header row
+        result.append("  #   ", LABEL)
+        result.append("Name".ljust(14), LABEL)
+        result.append("Satellite".ljust(14), LABEL)
+        result.append("Duration\n", LABEL)
+        result.append("  " + "─" * 50 + "\n", DIM)
+
+        for i, m in enumerate(missions, 1):
+            result.append(f"  {i}   ", NUMBER)
+            result.append(f"{m['name'][:12].ljust(14)}", INFO)
+            sat = m.get('satellite') or '—'
+            result.append(f"{sat[:12].ljust(14)}", TEXT)
+            dur = m.get('duration') or '—'
+            units = m.get('units') or ''
+            result.append(f"{dur} {units}\n", TEXT)
+
+    result.append("\n")
+    result.append("OPERATIONAL MODES\n", HEADER)
+    result.append("═" * 60 + "\n", DIM)
+    result.append("  ●   ", WARNING)
+    result.append("tvac".ljust(14), WARNING)
+    result.append("TVAC maintenance mode (no propagation)\n", DIM)
+
+    result.append("\n")
+    result.append("Usage: ", DIM)
+    result.append("run <name|#|tvac>\n", INFO)
+
+    return CLIResult(result, clear=True)
+
+
+# def _get_pid_path(script="sequence") -> str:
+#     data_dir = Recorder.get_data_dir()
+#     data_dir.mkdir(parents=True, exist_ok=True)
+#     return str(data_dir / f"{script}.pid")
+def _get_pid_path():
+    return Path(__file__).resolve().parents[3] / "data" / "sequence.pid"
+
+def _launch_sequence(mode: str, config_path: str | None = None) -> CLIResult:
+    """Launch sequence.py with mode and optional config."""
+    project_root = Path(__file__).resolve().parents[2]
+    seq_path = project_root / "sequence.py"
+    pid_path = _get_pid_path()
+    messages = []
+
+    # Check for existing process
+    if pid_path.exists():
+        try:
+            pid = int(pid_path.read_text())
+            os.kill(pid, 0)
+            return CLIResult(f"✔ sequence.py already running (pid {pid})")
+        except (ProcessLookupError, ValueError):
+            messages.append("⚠ stale PID file, restarting")
+        except PermissionError:
+            return CLIResult(f"✗ permission denied when checking pid {pid}")
+
+    # Build command
+    cmd = [sys.executable, str(seq_path), "--mode", mode]
+    if config_path:
+        cmd.extend(["--config", config_path])
+
+    # Launch
+    log_dir = project_root / "data"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "forms.log"
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=log_file.open("w"),
+        stderr=subprocess.STDOUT,
+        cwd=str(project_root),
+        start_new_session=True
+    )
+    pid_path.write_text(str(proc.pid))
+
+    # Write shared session file for GUI attachment
+    import json, time as _time
+    session_path = project_root.parent / "data" / "sequence.session.json"
+    session = {
+        "pid": proc.pid,
+        "mode": mode,
+        "config_path": str(Path(config_path).resolve()) if config_path else None,
+        "started_at": _time.time(),
+        "source": "cli",
+    }
+    try:
+        session_path.write_text(json.dumps(session, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    # Format response
+    if config_path:
+        mission_name = Path(config_path).stem
+        messages.append(f"🟢 sequence.py started (pid {proc.pid}, mission={mission_name})")
+    else:
+        messages.append(f"🟢 sequence.py started (pid {proc.pid}, mode={mode})")
+
+    return CLIResult("\n".join(messages), clear=False)
+
+
+def run_sequence(args=None) -> CLIResult:
+    """
+    Enhanced run command supporting:
+      - run               -> default mission (first available)
+      - run tvac          -> TVAC operational mode
+      - run darkness      -> missions/darkness.zen
+      - run 2             -> second mission by index
+      - run sequence tvac -> legacy compatibility
+    """
+    missions = discover_missions()
+
+    if not args:
+        # Default: first available mission or darkness fallback
+        if missions:
+            return _launch_sequence(mode="zen", config_path=missions[0]['path'])
+        return _launch_sequence(mode="mission", config_path=None)
+
+    target = args[0].lower()
+
+    # Legacy compatibility: "run sequence tvac" or "run sequence mission"
+    if target == "sequence":
+        mode = args[1] if len(args) > 1 else "mission"
+        return _launch_sequence(mode=mode, config_path=None)
+
+    # TVAC operational mode (special case)
+    if target == "tvac":
+        return _launch_sequence(mode="tvac", config_path=None)
+
+    # Resolve mission by name or index
+    mission = _resolve_mission(target, missions)
+
+    if not mission:
+        # Check for ambiguous partial match
+        matches = [m for m in missions if target in m['name'].lower()]
+        if len(matches) > 1:
+            names = ', '.join(m['name'] for m in matches)
+            return CLIResult(f"✗ Ambiguous: '{target}' matches [{names}]")
+        return CLIResult(f"✗ Unknown mission: '{target}'. Use 'missions' to list available.")
+
+    return _launch_sequence(mode="zen", config_path=mission['path'])
+
+def status_panel() -> CLIResult:
+    pid_path = _get_pid_path()
+    try:
+        pid = int(Path(pid_path).read_text().strip())
+    except Exception:
+        return CLIResult("✗ No valid sequence.pid found.")
+    if process_exists(pid):
+        return CLIResult(f"● sequence.py running (pid {pid})")
+    else:
+        try:
+            Path(pid_path).unlink()
+        except FileNotFoundError:
+            pass
+        return CLIResult(f"✗ sequence.py not running. Cleaned pid file.", clear=False)
+
+
+def list_sequence() -> CLIResult:
+    try:
+        out = subprocess.check_output(["pgrep", "-f", "sequence.py"]).decode().strip()
+        if not out:
+            return CLIResult("No sequence.py processes found.")
+        lines = [f"PID: {pid}" for pid in out.split()] 
+        return CLIResult("sequence.py processes:\n" + "\n".join(lines))
+    except subprocess.CalledProcessError:
+        return CLIResult("No sequence.py processes found.", clear=False)
+
+def end_sequence() -> CLIResult:
+    pid_path = _get_pid_path()
+    try:
+        pid = int(Path(pid_path).read_text().strip())
+        os.kill(pid, signal.SIGTERM)
+        Path(pid_path).unlink()
+        return CLIResult(f"✖ sequence.py (pid {pid}) terminated and pid file removed.")
+    except Exception as e:
+        return CLIResult(f"✗ Error terminating sequence.py: {e}", clear=False)
+
+def help_panel() -> CLIResult:
+    """Generate structured help panel with mission and control commands."""
+    result = Text()
+
+    # Navigation
+    result.append("═" * 60 + "\n", DIM)
+    result.append("NAVIGATION\n", HEADER)
+    result.append("  /switch astrid  ", LABEL)
+    result.append("Switch to Astrid\n", TEXT)
+    result.append("  /switch console ", LABEL)
+    result.append("Return to the forms console\n", TEXT)
+    result.append("  --cast          ", LABEL)
+    result.append("Hardware status panel\n", TEXT)
+    result.append("  --psu           ", LABEL)
+    result.append("PSU controls\n", TEXT)
+    result.append("  --ctrl          ", LABEL)
+    result.append("Return here\n", TEXT)
+    result.append("  --exit          ", LABEL)
+    result.append("Quit\n", TEXT)
+
+    # Missions
+    result.append("\n")
+    result.append("═" * 60 + "\n", DIM)
+    result.append("MISSIONS\n", HEADER)
+    result.append("  missions        ", LABEL)
+    result.append("List available missions and modes\n", TEXT)
+    result.append("  run <target>    ", LABEL)
+    result.append("Launch mission (name, #, or 'tvac')\n", TEXT)
+
+    # Process control
+    result.append("\n")
+    result.append("═" * 60 + "\n", DIM)
+    result.append("PROCESS CONTROL\n", HEADER)
+    result.append("  status          ", LABEL)
+    result.append("Check if sequence.py is running\n", TEXT)
+    result.append("  ps              ", LABEL)
+    result.append("List all sequence.py processes\n", TEXT)
+    result.append("  pause           ", LABEL)
+    result.append("Pause the running sequence\n", TEXT)
+    result.append("  resume          ", LABEL)
+    result.append("Resume a paused sequence\n", TEXT)
+    result.append("  end             ", LABEL)
+    result.append("Terminate the running sequence\n", TEXT)
+
+    # Examples
+    result.append("\n")
+    result.append("═" * 60 + "\n", DIM)
+    result.append("EXAMPLES\n", HEADER)
+    result.append("  run darkness    ", INFO)
+    result.append("Launch the darkness mission\n", DIM)
+    result.append("  run 1           ", INFO)
+    result.append("Launch first listed mission\n", DIM)
+    result.append("  run tvac        ", INFO)
+    result.append("Enter TVAC maintenance mode\n", DIM)
+
+    return CLIResult(result)
+
+# Command registry
+COMMANDS = {
+    "run": run_sequence,
+    "missions": missions_command,
+    "list": missions_command,  # Alias
+    "status": status_panel,
+    "ps": list_sequence,
+    "end": end_sequence,
+    "help": help_panel,
+}
+
+def execute_command(args: list[str]) -> CLIResult:
+    if not args:
+        return help_panel()
+    cmd = args[0].lstrip("-").lower()
+    if cmd == "run":
+        return run_sequence(args[1:])
+    handler = COMMANDS.get(cmd)
+    if handler:
+        return handler()
+    # Fallback for other commands
+    WriteCommand(cmd, args[1] if len(args) > 1 else None)
+    return CLIResult(f"✔ dispatched '{cmd}'", clear=False)
+
+# CLI entrypoint
+if __name__ == "__main__":
+    res = execute_command(sys.argv[1:])
+    # Render result
+    content = res.content
+    if hasattr(content, 'render'):
+        print(content.render())
+    else:
+        print(content)

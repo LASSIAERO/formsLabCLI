@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Console runtime state, rewritten on every run.
+src/formslab/console/cast/castfile.json
+src/formslab/console/ctrl/ctrlfile.json
+
+# Lab-local instrument addresses (USB serials, hub locations, PowerSwitch host).
+# These differ per bench; the tracked copy is the default template.
+usbmap.local.json
+
+# Captured data and logs.
+outputs/
+data/
+*.log
+*.fz
+*.fits

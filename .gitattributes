@@ -1,0 +1,4 @@
+* text=auto
+
+# Deployed onto the Pico over mpremote; keep it LF regardless of checkout OS.
+src/formslab/devices/pico_board_control.py text eol=lf
