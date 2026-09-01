@@ -1,13 +1,13 @@
 """The console's single seam onto FORMS.
 
-Every ``import forms`` in ``cli/`` passes through this module. Nothing else in
-the console may name the library directly.
+Every ``import forms`` in ``formslab.console`` and ``formslab.devices`` passes
+through this module. Nothing else there may name the library directly.
 
 The console is a lab tool first: it drives PSUs, the cryocooler board, RTDs and
 thermocouples, none of which need an astrodynamics library. FORMS is what turns
-it into a *mission* console — the API catalog browser, the Book reader and the
-external-resource registry. Those are the only three surfaces involved, they are
-all read-only reporting APIs, and none of them sit in a hot loop.
+it into a *mission* console -- the API catalog browser, the Book reader, the
+external-resource registry, and knowing where the mission library lives. Those
+are read-only reporting APIs, and none of them sit in a hot loop.
 
 Keeping them behind one file buys two things:
 
@@ -15,11 +15,12 @@ Keeping them behind one file buys two things:
   a lab machine installs the transports and nothing else. A command that needs
   the library raises `FormsUnavailable`, which sessions render as a message
   instead of a traceback.
-* **The dependency is countable.** The surface the console consumes is the list
-  of accessors below, and it is enforced by there being nowhere else to import
-  from. That matters while `cli/` and `lab/` are being lifted into their own
-  repository, where `forms` becomes an optional extra rather than a sibling
-  directory on `sys.path`.
+* **The dependency is countable.** The surface consumed is `SURFACES` below, and
+  it is enforced by there being nowhere else to import from.
+
+``formslab.host`` is the deliberate exception: it exists to run FORMS missions,
+so it imports the library directly and requires the `[forms]` extra. The seam
+protects the console, not the host.
 
 Accessors return the *module*, not re-exported names: the console tracks the
 library's own vocabulary rather than inventing a parallel one, and adding a call
@@ -40,6 +41,7 @@ SURFACES = {
     "forms.bricks.resources": "External-resource registry: inventory and status",
     "forms.bricks.fetch": "External-resource registry: on-demand downloads",
     "forms.ai.manifest": "Live agent capabilities: the `skills` rank",
+    "forms.core.paths": "Workspace resolution: where the mission library lives",
 }
 
 
@@ -106,6 +108,17 @@ def resources() -> ModuleType:
 def fetch() -> ModuleType:
     """`forms.bricks.fetch` — `update_resource`, `update_stale_resources`."""
     return _load("forms.bricks.fetch")
+
+
+def paths():
+    """`forms.core.paths` -- `missions_root`, `workspace_root`, `rscripts_dir`.
+
+    The console does not invent its own idea of where a workspace is. FORMS
+    already resolves one ($FORMS_MISSIONS_DIR, then a walk up for `missions/`,
+    then a remembered choice), and `ctrl` asking the library is the only way the
+    two agree about which missions exist.
+    """
+    return _load("forms.core.paths")
 
 
 def forms_root():

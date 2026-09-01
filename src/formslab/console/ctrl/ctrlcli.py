@@ -16,17 +16,24 @@ import os, sys, signal, subprocess
 from rich.text import Text
 from formslab.console.sessions.base import CLIResult
 from formslab.console.ctrl.ctrlutils import ReadCommand, WriteCommand, LoadCommands, process_exists
-from formslab.console.style import HEADER, DIM, INFO, NUMBER, LABEL, TEXT, WARNING, SUCCESS
+from formslab.console.style import HEADER, DIM, ERROR, INFO, NUMBER, LABEL, TEXT, WARNING, SUCCESS
+from formslab import bridge
+from formslab.config import output_dir
+from formslab.console.log.logcli import log_path
 
-# Mission discovery.
-#
-# NOT YET RESOLVED after the extraction. `missions/` and `sequence.py` are
-# FORMS workspace concepts that this path used to reach by walking up out of
-# `python/cli/ctrl/`; from an installed package there is nothing above to walk
-# to. `run` and `missions` therefore report an empty library rather than
-# launching anything. Both come back when the sequence host moves over, at
-# which point this resolves through the workspace, not through `__file__`.
-MISSIONS_DIR = Path(__file__).resolve().parents[2] / "missions"
+def missions_dir():
+    """The `.zen` mission library, as FORMS resolves it.
+
+    Asked of the library rather than computed here: FORMS already resolves a
+    workspace ($FORMS_MISSIONS_DIR, then a walk up for `missions/`, then a
+    remembered choice), and only by asking do the console and the host agree on
+    which missions exist. Returns None when FORMS is absent -- there is no
+    mission library without it, and `missions` says so rather than guessing.
+    """
+    try:
+        return bridge.paths().missions_root()
+    except bridge.FormsUnavailable:
+        return None
 
 
 def _parse_zen_header(path: Path) -> dict:
@@ -57,9 +64,10 @@ def _parse_zen_header(path: Path) -> dict:
 def discover_missions() -> list[dict]:
     """Discover .zen mission files with metadata."""
     missions = []
-    if not MISSIONS_DIR.exists():
+    root = missions_dir()
+    if root is None or not root.exists():
         return missions
-    for zen_path in sorted(MISSIONS_DIR.glob("*.zen")):
+    for zen_path in sorted(root.glob("*.zen")):
         meta = _parse_zen_header(zen_path)
         missions.append({
             "name": zen_path.stem,
@@ -135,17 +143,26 @@ def missions_command() -> CLIResult:
     return CLIResult(result, clear=True)
 
 
-# def _get_pid_path(script="sequence") -> str:
-#     data_dir = Recorder.get_data_dir()
-#     data_dir.mkdir(parents=True, exist_ok=True)
-#     return str(data_dir / f"{script}.pid")
+# The pid file, the log and the session record used to resolve against three
+# *different* "data" directories (parents[3], parents[2], and parents[2].parent),
+# so the console could report a mission as not running while its own log sat
+# somewhere else. They share the output directory now.
 def _get_pid_path():
-    return Path(__file__).resolve().parents[3] / "data" / "sequence.pid"
+    return output_dir() / "sequence.pid"
+
 
 def _launch_sequence(mode: str, config_path: str | None = None) -> CLIResult:
-    """Launch sequence.py with mode and optional config."""
-    project_root = Path(__file__).resolve().parents[2]
-    seq_path = project_root / "sequence.py"
+    """Launch the sequence host with a mode and optional mission config.
+
+    Started as `python -m formslab.host.sequence` rather than by path: the host
+    is an installed module, and resolving it as a file would put us back to
+    guessing where the package lives.
+    """
+    if not bridge.available():
+        return CLIResult(Text(
+            "✗ run needs FORMS. Install it with "
+            "`pip install \"formslab[forms]\"` to launch missions.", style=ERROR))
+
     pid_path = _get_pid_path()
     messages = []
 
@@ -154,34 +171,32 @@ def _launch_sequence(mode: str, config_path: str | None = None) -> CLIResult:
         try:
             pid = int(pid_path.read_text())
             os.kill(pid, 0)
-            return CLIResult(f"✔ sequence.py already running (pid {pid})")
+            return CLIResult(f"✔ sequence host already running (pid {pid})")
         except (ProcessLookupError, ValueError):
             messages.append("⚠ stale PID file, restarting")
         except PermissionError:
             return CLIResult(f"✗ permission denied when checking pid {pid}")
 
     # Build command
-    cmd = [sys.executable, str(seq_path), "--mode", mode]
+    cmd = [sys.executable, "-m", "formslab.host.sequence", "--mode", mode]
     if config_path:
         cmd.extend(["--config", config_path])
 
-    # Launch
-    log_dir = project_root / "data"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "forms.log"
+    # Launch. The host inherits this working directory, so a mission's outputs
+    # land beside the session that started it.
+    log_file = log_path()
 
     proc = subprocess.Popen(
         cmd,
         stdout=log_file.open("w"),
         stderr=subprocess.STDOUT,
-        cwd=str(project_root),
         start_new_session=True
     )
     pid_path.write_text(str(proc.pid))
 
     # Write shared session file for GUI attachment
     import json, time as _time
-    session_path = project_root.parent / "data" / "sequence.session.json"
+    session_path = output_dir() / "sequence.session.json"
     session = {
         "pid": proc.pid,
         "mode": mode,
@@ -197,9 +212,9 @@ def _launch_sequence(mode: str, config_path: str | None = None) -> CLIResult:
     # Format response
     if config_path:
         mission_name = Path(config_path).stem
-        messages.append(f"🟢 sequence.py started (pid {proc.pid}, mission={mission_name})")
+        messages.append(f"🟢 sequence host started (pid {proc.pid}, mission={mission_name})")
     else:
-        messages.append(f"🟢 sequence.py started (pid {proc.pid}, mode={mode})")
+        messages.append(f"🟢 sequence host started (pid {proc.pid}, mode={mode})")
 
     return CLIResult("\n".join(messages), clear=False)
 

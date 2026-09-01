@@ -45,10 +45,15 @@ pip install -e ".[dev]"       # + pytest
 ```
 src/formslab/
 ├── app.py       the `fconsole` entry point: the REPL and its tab bar
-├── bridge.py    the ONLY module allowed to import `forms`
+├── bridge.py    the ONLY module allowed to import `forms` (host/ excepted)
+├── config.py    config and output directory resolution
 ├── state.py     CTRL command table and CAST device state
 ├── console/     the tabs, sessions, and command tables
-└── devices/     one module per instrument, plus usbmap.json
+├── devices/     one module per instrument
+├── defaults/    shipped usbmap.json
+└── host/        the sequence host — needs [forms]
+rScripts/        hardware routines, workspace content (see its README)
+scripts/         standalone bench tools: plotting, image conversion, GUI bridge
 ```
 
 ### The FORMS seam
@@ -92,13 +97,35 @@ Instrument tests are quarantined in `conftest.py` — they need hardware on the
 bench and are run by naming the file (`pytest test/test_DP832A.py`). Everything
 else runs against fakes and passes on a bare install with nothing plugged in.
 
+## Running a mission
+
+`ctrl`'s `run` starts the sequence host — the process that drives a FORMS
+mission against the bench:
+
+```
+fconsole --ctrl
+ctrl> missions          # the .zen library, as FORMS resolves it
+ctrl> run tvac          # or: run darkness, run 1
+log>  tail 50           # the host's output
+```
+
+This needs the `[forms]` extra. Without it `run` says so rather than failing
+part-way. The host can also be started directly:
+
+```
+python -m formslab.host.sequence --mode tvac
+```
+
+`missions` asks FORMS where the library is (`$FORMS_MISSIONS_DIR`, then a walk
+up for `missions/`, then a remembered workspace) rather than keeping its own
+idea of it, so the console and the host always agree about which missions exist.
+
 ## Status
 
 Extracted from the FORMS repository, where this was `python/cli/` +
-`python/lab/`. One thing is not yet reconnected, and it is marked in the source:
-**`ctrl`'s `run` / `missions`** and **`log`'s tail** reach the sequence host and
-the `.zen` mission library, which have not moved over yet. They report an empty
-library rather than launching anything.
+`python/lab/` plus the host scripts at `python/`. Everything is reconnected; the
+remaining work is on the FORMS side, where the original copies still need
+deleting.
 
 ## Relationship to FORMS
 

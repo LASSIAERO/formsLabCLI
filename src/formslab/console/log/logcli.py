@@ -3,15 +3,23 @@ import sys, re, json
 from pathlib import Path
 from rich.text import Text
 from formslab.console.sessions.base import CLIResult
+from formslab.config import output_dir
 from formslab.console.style import console, TEXT, ERROR
 
 # Paths
 CONFIG_FILE = Path(__file__).resolve().parent / "logfile.json"
-# NOT YET RESOLVED after the extraction: this tails the log written by the
-# sequence host, which has not moved over yet. Same fix as MISSIONS_DIR in
-# ctrl/ctrlcli.py -- a resolved workspace rather than a walk up from __file__.
-FORMSPATH = Path(__file__).resolve().parents[3]
-DATAPATH     = FORMSPATH / "data" / "forms.log"
+
+
+def log_path() -> Path:
+    """The sequence host's log.
+
+    The single definition of that file: `ctrl` redirects the host's stdout here
+    when it launches, and this tab reads it back. Previously the two computed it
+    from different roots, so the tab could tail a file nothing was writing.
+    """
+    return output_dir() / "forms.log"
+
+
 # Load command definitions from logfile.json
 def load_commands():
     try:
@@ -22,7 +30,7 @@ def load_commands():
 # Command handlers
 def show_log(args):
     try:
-        data = DATAPATH.read_text().splitlines()
+        data = log_path().read_text().splitlines()
     except Exception as e:
         return CLIResult(Text(f"Error reading log: {e}", style=ERROR))
     return CLIResult(Text("\n".join(data), style=TEXT), clear=True, suppress_prompt=True)
@@ -41,7 +49,7 @@ def tail_log(args):
     if n > 10000:
         return CLIResult(Text("✗ Count too large (max: 10000 lines)", style=ERROR))
 
-    data = DATAPATH.read_text().splitlines()
+    data = log_path().read_text().splitlines()
     return CLIResult(Text("\n".join(data[-n:]), style=TEXT))
 
 def grep_log(args):
@@ -55,7 +63,7 @@ def grep_log(args):
     except re.error as e:
         return CLIResult(Text(f"✗ Invalid regex pattern: {e}", style=ERROR))
 
-    data = DATAPATH.read_text().splitlines()
+    data = log_path().read_text().splitlines()
     hits = [l for l in data if re.search(pat, l)]
     return CLIResult(Text("\n".join(hits), style=TEXT))
 

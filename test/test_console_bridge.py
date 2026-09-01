@@ -25,17 +25,22 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parents[1] / "src" / "formslab"
 
-# The rule now covers the whole package, not just the console: `devices/` never
-# had a reason to name FORMS and must not grow one. Nothing is exempt --
-# `console/flatsat/`, the one exemption that existed in the FORMS repository,
-# stayed behind with the subsystem it wrapped.
+# The rule covers the console and the drivers: `devices/` never had a reason to
+# name FORMS and must not grow one.
+#
+# `host/` is exempt, and it is the only exemption. It is not the console
+# optionally reaching FORMS -- it exists to run FORMS missions, needs the
+# `[forms]` extra, and does not import at all without it. Routing its fifteen
+# library symbols through the bridge would make the seam a directory of
+# pass-throughs and hide the very distinction it is drawn to show.
 BRIDGE = "bridge.py"
+EXEMPT_TREE = "host/"
 
 
 def _package_sources():
     for path in sorted(PACKAGE.rglob("*.py")):
         rel = path.relative_to(PACKAGE).as_posix()
-        if rel == BRIDGE:
+        if rel == BRIDGE or rel.startswith(EXEMPT_TREE):
             continue
         yield rel, path.read_text(encoding="utf-8")
 

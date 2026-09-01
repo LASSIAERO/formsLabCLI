@@ -1,0 +1,129 @@
+"""The console-to-host seam: mission discovery, launch, and the log.
+
+Three things were reconnected when the sequence host moved over, and all three
+were previously computed independently in two places -- which is how the console
+came to tail a log nothing was writing.
+"""
+
+import subprocess
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from formslab import bridge, config
+from formslab.console.ctrl import ctrlcli
+from formslab.console.log import logcli
+
+
+class MissionDiscovery(unittest.TestCase):
+    """`ctrl` asks FORMS where the missions are; it does not guess."""
+
+    def test_missions_dir_comes_from_the_library(self):
+        fake = mock.Mock()
+        fake.missions_root.return_value = Path("/somewhere/missions")
+        with mock.patch.object(bridge, "paths", return_value=fake):
+            self.assertEqual(ctrlcli.missions_dir(),
+                             Path("/somewhere/missions"))
+
+    def test_missions_dir_is_none_without_forms(self):
+        """There is no mission library without FORMS. Say so, do not invent one."""
+        def unavailable():
+            raise bridge.FormsUnavailable("forms.core.paths")
+
+        with mock.patch.object(bridge, "paths", side_effect=unavailable):
+            self.assertIsNone(ctrlcli.missions_dir())
+
+    def test_discovery_is_empty_rather_than_raising(self):
+        with mock.patch.object(ctrlcli, "missions_dir", return_value=None):
+            self.assertEqual(ctrlcli.discover_missions(), [])
+
+    def test_discovery_reads_zen_files(self, ):
+        root = config.config_dir() / "missions"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "demo.zen").write_text(
+            '# mission: Demo\nsatellite.name = "SAT-1"\ntime.duration = 90\n',
+            encoding="utf-8")
+
+        with mock.patch.object(ctrlcli, "missions_dir", return_value=root):
+            found = ctrlcli.discover_missions()
+
+        self.assertEqual([m["name"] for m in found], ["demo"])
+        self.assertEqual(found[0]["satellite"], "SAT-1")
+
+
+class LaunchRefusesWithoutForms(unittest.TestCase):
+
+    def test_run_reports_the_missing_extra_instead_of_launching(self):
+        with mock.patch.object(bridge, "available", return_value=False), \
+                mock.patch.object(ctrlcli.subprocess, "Popen") as popen:
+            result = ctrlcli._launch_sequence("tvac")
+
+        popen.assert_not_called()
+        self.assertIn("formslab[forms]", result.content.plain)
+
+
+class LaunchTargetsTheInstalledHost(unittest.TestCase):
+
+    def _launch(self):
+        proc = mock.Mock(pid=4321)
+        with mock.patch.object(bridge, "available", return_value=True), \
+                mock.patch.object(ctrlcli.subprocess, "Popen",
+                                  return_value=proc) as popen:
+            result = ctrlcli._launch_sequence("tvac")
+        return popen.call_args, result
+
+    def test_host_is_started_as_a_module_not_a_file_path(self):
+        """`-m` is what stops us guessing where the package lives on disk."""
+        call, _ = self._launch()
+        cmd = call.args[0]
+
+        self.assertEqual(cmd[1:4], ["-m", "formslab.host.sequence", "--mode"])
+        self.assertEqual(cmd[4], "tvac")
+
+    def test_pid_log_and_session_share_one_directory(self):
+        """They used to resolve against three different roots."""
+        self._launch()
+        out = config.output_dir()
+
+        self.assertEqual(ctrlcli._get_pid_path().parent, out)
+        self.assertEqual(logcli.log_path().parent, out)
+        self.assertTrue((out / "sequence.session.json").exists())
+
+    def test_the_log_ctrl_writes_is_the_log_the_tab_reads(self):
+        """The regression this phase exists to close."""
+        call, _ = self._launch()
+        written_to = call.kwargs["stdout"].name
+
+        self.assertEqual(Path(written_to), logcli.log_path())
+
+    def test_the_pid_is_recorded_so_a_second_run_is_refused(self):
+        self._launch()
+        self.assertEqual(ctrlcli._get_pid_path().read_text(), "4321")
+
+
+class HostRequiresForms(unittest.TestCase):
+
+    def test_host_is_importable_only_with_the_extra(self):
+        import importlib
+        if not bridge.available():
+            with self.assertRaises(ModuleNotFoundError):
+                importlib.import_module("formslab.host.sequence")
+        else:
+            importlib.import_module("formslab.host.sequence")
+
+    def test_host_runs_as_a_module(self):
+        """What `ctrl` actually invokes. Skipped on a bare lab install."""
+        if not bridge.available():
+            self.skipTest("needs the optional [forms] extra")
+
+        import sys
+        proc = subprocess.run(
+            [sys.executable, "-m", "formslab.host.sequence", "--help"],
+            capture_output=True, text=True, timeout=180)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("--mode", proc.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
