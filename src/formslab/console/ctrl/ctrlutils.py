@@ -17,23 +17,22 @@ from formslab.console.style import (
     PROMPT_PREFIX,
     PROMPT_SUFFIX,
 )
-from formslab.state import CTRL_STATE_PATH, build_default_ctrl_commands
+from formslab.state import build_default_ctrl_commands, ctrl_state_path
 
 
-CTRLFILE = CTRL_STATE_PATH
 
 def _default_commands() -> Dict:
     return build_default_ctrl_commands()
 
 def _ensure_ctrlfile() -> Dict:
     cmds = _default_commands()
-    CTRLFILE.parent.mkdir(parents=True, exist_ok=True)
+    ctrl_state_path().parent.mkdir(parents=True, exist_ok=True)
     _write_ctrljson(cmds)
     return cmds
 
 def LoadCommands():
     try:
-        with open(CTRLFILE, "r") as f:
+        with open(ctrl_state_path(), "r") as f:
             return json.load(f)
     except FileNotFoundError:
         return _ensure_ctrlfile()
@@ -51,7 +50,7 @@ def ReadCommand(label: str) -> Optional[Dict]:
 
     cmds[label] = {"key": None, "processed": True}
 
-    with open(CTRLFILE, "w") as f:
+    with open(ctrl_state_path(), "w") as f:
         json.dump(cmds, f, indent=2)
 
     return block
@@ -75,7 +74,7 @@ def ResetCtrlState():
     _write_ctrljson(cmds)
 
 def _write_ctrljson(cmds: Dict):
-    with open(CTRLFILE, "w") as f:
+    with open(ctrl_state_path(), "w") as f:
         lines = ["{"]
         keys = list(cmds.keys())
         for i, k in enumerate(keys):

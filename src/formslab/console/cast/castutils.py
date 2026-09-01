@@ -5,9 +5,8 @@ import traceback
 import threading
 from typing import Tuple
 
-from formslab.state import CAST_STATE_PATH, build_default_cast_state
+from formslab.state import build_default_cast_state, cast_state_path
 
-default_cast_path = CAST_STATE_PATH
 _KNOWN_CAST_LABELS = set(build_default_cast_state())
 
 # --- File lock for all castfile.json read-modify-write operations ---
@@ -120,14 +119,14 @@ def ReadAllCommands(labels: list, path: Path = None) -> dict:
 
     Args:
         labels: List of command labels to check (e.g. ["end","reset","resume","pause"]).
-        path:   Path to the cast file (defaults to default_cast_path).
+        path:   Path to the cast file (defaults to the configured cast state).
 
     Returns:
         Dict mapping label → request dict for each label that had an unprocessed request.
         Labels with no pending request are absent from the result.
     """
     if path is None:
-        path = default_cast_path
+        path = cast_state_path()
     with _cast_lock:
         data = _safe_read_json(path)   # single read
         results = {}
@@ -151,7 +150,7 @@ def ReadAllCommands(labels: list, path: Path = None) -> dict:
 
 def ReadCommand(label: str, path: Path = None) -> dict:
     if path is None:
-        path = default_cast_path
+        path = cast_state_path()
     with _cast_lock:
         data  = _safe_read_json(path)
         _, block, changed = _get_or_create_block(data, label)
@@ -167,7 +166,7 @@ def ReadCommand(label: str, path: Path = None) -> dict:
 
 def WriteCommand(request: dict, label: str, path: Path = None):
     if path is None or not path.exists():
-        path = default_cast_path
+        path = cast_state_path()
     with _cast_lock:
         data = _safe_read_json(path)
         _, block, _ = _get_or_create_block(data, label)
@@ -183,7 +182,7 @@ def WriteCommand(request: dict, label: str, path: Path = None):
 
 def ReadStatus(label: str, path: Path = None) -> dict:
     if path is None or not path.exists():
-        path = default_cast_path
+        path = cast_state_path()
     with _cast_lock:
         data = _safe_read_json(path)
         _, block, changed = _get_or_create_block(data, label)
@@ -193,7 +192,7 @@ def ReadStatus(label: str, path: Path = None) -> dict:
 
 def UpdateStatus(label: str, status: dict, path: Path = None):
     if path is None or not path.exists():
-        path = default_cast_path
+        path = cast_state_path()
     with _cast_lock:
         data = _safe_read_json(path)
         _, block, _ = _get_or_create_block(data, label)
@@ -203,7 +202,7 @@ def UpdateStatus(label: str, status: dict, path: Path = None):
 
 def ResetJson(path: Path = None):
     if path is None or not path.exists():
-        path = default_cast_path
+        path = cast_state_path()
     with _cast_lock:
         try:
             data = _safe_read_json(path)
@@ -220,7 +219,7 @@ def ResetJson(path: Path = None):
 
 def GenerateCleanCast(path: Path = None):
     if path is None:
-        path = default_cast_path
+        path = cast_state_path()
     template = build_default_cast_state()
     with _cast_lock:
         AtomicJsonWrite(template, path)

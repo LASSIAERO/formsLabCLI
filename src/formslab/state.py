@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from formslab import config
+
 from formslab.devices.cryo_config import (
     CRYO_PSU_CHANNEL,
     CRYO_PSU_LABEL,
@@ -13,13 +15,21 @@ from formslab.devices.cryo_config import (
 )
 
 
-# Where the console's mutable runtime state lives. Still inside the package,
-# as it was inside the checkout before the extraction -- Phase 2 moves it to a
-# real per-user config directory ($FORMSLAB_CONFIG_DIR / ~/.formslab), which is
-# what makes an installed console writable on a lab machine.
-PACKAGE_ROOT = Path(__file__).resolve().parent
-CAST_STATE_PATH = PACKAGE_ROOT / "console" / "cast" / "castfile.json"
-CTRL_STATE_PATH = PACKAGE_ROOT / "console" / "ctrl" / "ctrlfile.json"
+# The console's mutable runtime state, in the config directory rather than
+# beside the code: site-packages is read-only on a shared lab machine and is
+# replaced on upgrade, and CAST state is the last thing that should be lost to
+# a `pip install --upgrade` in the middle of a run.
+#
+# Read through the accessors, not the module constants -- `$FORMSLAB_CONFIG_DIR`
+# is read per call so a test (or a second bench) can redirect it.
+def cast_state_path() -> Path:
+    """Where CAST keeps live device state."""
+    return config.state_path("castfile.json")
+
+
+def ctrl_state_path() -> Path:
+    """Where CTRL keeps its command table."""
+    return config.state_path("ctrlfile.json")
 
 
 def build_default_ctrl_commands() -> dict:
@@ -150,5 +160,6 @@ def ensure_json_file(path: Path, factory: Callable[[], dict]) -> Path:
 
 
 def ensure_runtime_files() -> None:
-    ensure_json_file(CAST_STATE_PATH, build_default_cast_state)
-    ensure_json_file(CTRL_STATE_PATH, build_default_ctrl_commands)
+    """Create any missing state file from its code default."""
+    ensure_json_file(cast_state_path(), build_default_cast_state)
+    ensure_json_file(ctrl_state_path(), build_default_ctrl_commands)

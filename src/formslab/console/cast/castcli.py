@@ -12,9 +12,8 @@ from formslab.console.style import (
     TEXT, HEADER, ERROR, NUMBER, ACCENT1, ACCENT2, PROMPT_SUFFIX,
     DIM, INFO, LABEL, UNIT, STATE_ON, STATE_OFF, STATE_ERR, SUCCESS, WARNING,
 )
-from formslab.state import CAST_STATE_PATH
+from formslab.state import cast_state_path
 
-CASTPATH = CAST_STATE_PATH
 HELPPATH = Path(__file__).parent / "casthelp.json"
 
 # ── Display order for status_panel ───────────────────────────
@@ -26,7 +25,7 @@ _DISPLAY_ORDER = ["psu1", "psu2", "slta", "tvac", "cryo"]
 
 def _load_cast() -> dict:
     """Read and validate castfile.json. Raises on failure."""
-    raw = CASTPATH.read_text()
+    raw = cast_state_path().read_text()
     data = json.loads(raw)
     if not isinstance(data, dict) or not data:
         raise ValueError("empty or invalid")

@@ -1,10 +1,17 @@
 import json
+import sys
 from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
 # === Load JSON Data ===
-with open("lab/TVAC.json", "r") as file:
+# The TVAC log to plot, named on the command line. This was a hardcoded
+# `lab/TVAC.json` relative to the working directory, which only resolved from
+# inside the old FORMS checkout.
+if len(sys.argv) < 2:
+    raise SystemExit(f"usage: python {sys.argv[0]} <tvac-log.json>")
+
+with open(sys.argv[1], "r") as file:
     data = json.load(file)
 
 timestamps = [datetime.strptime(entry["timestamp"], "%Y:%m:%d:%H:%M:%S.%f") for entry in data]

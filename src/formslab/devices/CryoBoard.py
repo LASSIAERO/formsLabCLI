@@ -25,6 +25,8 @@ anything -- see :meth:`status` for why the two are deliberately separate.
 import json
 from pathlib import Path
 
+from formslab.config import usbmap_path
+
 from formslab.devices import cryo_registers as regs
 from formslab.devices.cryo_config import (
     CCV_MAX_V,
@@ -63,7 +65,7 @@ class CryoBoard:
         config_path = (
             Path(path).resolve()
             if path
-            else Path(__file__).resolve().parent / "usbmap.json"
+            else usbmap_path()
         )
         with config_path.open("r", encoding="utf-8") as handle:
             config = json.load(handle)

@@ -17,7 +17,6 @@ from rich.text import Text
 from formslab.console.sessions.base import CLIResult
 from formslab.console.ctrl.ctrlutils import ReadCommand, WriteCommand, LoadCommands, process_exists
 from formslab.console.style import HEADER, DIM, INFO, NUMBER, LABEL, TEXT, WARNING, SUCCESS
-from formslab.state import CTRL_STATE_PATH
 
 # Mission discovery.
 #
@@ -28,9 +27,6 @@ from formslab.state import CTRL_STATE_PATH
 # launching anything. Both come back when the sequence host moves over, at
 # which point this resolves through the workspace, not through `__file__`.
 MISSIONS_DIR = Path(__file__).resolve().parents[2] / "missions"
-
-# Constants
-CTRLFILE = CTRL_STATE_PATH
 
 
 def _parse_zen_header(path: Path) -> dict:

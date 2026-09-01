@@ -116,6 +116,8 @@ from time import time, sleep
 import json
 from pathlib import Path
 
+from formslab.config import output_dir
+
 class HeaterController:
     """Direct PSU1 heater loop used by TVAC.
 
@@ -140,7 +142,10 @@ class HeaterController:
         self._integral = {name: 0.0 for name in channel_map}
         self._last_time = time()
 
-        self.log_file = Path(__file__).parent / log_file
+        # Run product, not code: into the output directory, never beside the
+        # driver. site-packages is read-only on a shared lab machine.
+        self.log_file = (Path(log_file) if Path(log_file).is_absolute()
+                         else output_dir() / log_file)
         self.log_interval = log_interval
         self._last_log_time = time()
 

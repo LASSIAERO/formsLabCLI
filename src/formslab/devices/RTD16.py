@@ -9,7 +9,7 @@
 # class RTD16:
 #     def __init__(self, label, usbmap=None):
 #         if usbmap is None:
-#             usbmap = Path(__file__).resolve().parent / "usbmap.json"
+#             usbmap = usbmap_path()
 
 #         with usbmap.open("r") as f:
 #             cfg = json.load(f)[label]
@@ -94,6 +94,8 @@ import time
 import logging
 from datetime import datetime
 from pathlib import Path
+
+from formslab.config import usbmap_path
 import serial
 import subprocess
 import traceback
@@ -104,7 +106,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 class RTD16:
     def __init__(self, label, usbmap=None):
         if usbmap is None:
-            usbmap = Path(__file__).resolve().parent / "usbmap.json"
+            usbmap = usbmap_path()
 
         with usbmap.open("r") as f:
             self.cfg = json.load(f)[label]

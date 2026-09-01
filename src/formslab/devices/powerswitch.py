@@ -22,8 +22,9 @@ from typing import Callable, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from formslab.config import usbmap_path
 
-CONFIG_PATH = Path(__file__).with_name("usbmap.json")
+
 PASSWORD_ENV = "FORMS_POWERSWITCH_PASSWORD"
 
 
@@ -40,8 +41,13 @@ class PowerSwitchConfig:
     outlet_count: int = 8
 
 
-def load_config(path: Path = CONFIG_PATH) -> PowerSwitchConfig:
-    """Load the permanent ``PS`` lab record with backwards-safe defaults."""
+def load_config(path: Path | None = None) -> PowerSwitchConfig:
+    """Load the permanent ``PS`` lab record with backwards-safe defaults.
+
+    Resolved at call time, not at import: the config directory is chosen by
+    the environment, which a caller may set after this module is loaded.
+    """
+    path = path if path is not None else usbmap_path()
     raw: dict = {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))

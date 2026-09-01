@@ -2,6 +2,8 @@
 import json
 import subprocess
 from pathlib import Path
+
+from formslab.config import usbmap_path
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
@@ -21,12 +23,15 @@ from formslab.console.style import (
 )
 
 BASE = Path(__file__).parent
-USBMAP = BASE.parent / "lab" / "usbmap.json"
+# Resolved per call: this module both reads and *writes* the map (`map_slta`
+# records a discovered serial number), so it must reach the live copy in the
+# config directory, never the read-only packaged default. The path it used to
+# build -- `console/lab/usbmap.json` -- never existed after the extraction.
 
 
 def load_map():
     try:
-        with open(USBMAP) as f:
+        with open(usbmap_path()) as f:
             return json.load(f)
     except Exception as e:
         raise RuntimeError(f"Failed to load usbmap.json: {e}")
@@ -151,7 +156,7 @@ def map_slta(usbmap, label="slta"):
     entry.update({"hub_location": "detected_loc", "hub_port": 1, "port": "detected_port"})
     usbmap[label] = entry
     try:
-        with open(USBMAP, "w") as f:
+        with open(usbmap_path(), "w") as f:
             json.dump(usbmap, f, indent=2)
         return CLIResult(Text(f"✔ {label} mapped to {entry['hub_location']} port {entry['hub_port']}", style=ACCENT2))
     except Exception as e:

@@ -11,14 +11,19 @@ from pathlib import Path
 
 import pytest
 
-import formslab.devices
+from formslab import config
 from formslab.devices import cryo_registers as regs
 from formslab.devices.CryoBoard import CryoBoard
 
-# Derived from the installed package rather than a path walk up from the test
-# file: the map ships beside the drivers, and this cannot drift if the layout
-# moves again.
-USBMAP = Path(formslab.devices.__file__).resolve().parent / "usbmap.json"
+
+def _usbmap():
+    """The live map, seeded from the packaged default into the test config dir.
+
+    Resolved per call rather than at import: `conftest` redirects
+    `$FORMSLAB_CONFIG_DIR` per test, so a module-level constant would capture
+    whichever directory happened to exist at collection time.
+    """
+    return config.usbmap_path()
 
 
 class FakeI2C:
@@ -68,7 +73,7 @@ class FakeI2C:
 
 def make_board(**kwargs):
     bus = FakeI2C(**kwargs)
-    board = CryoBoard("cryo_board", config_path=USBMAP, transport=bus)
+    board = CryoBoard("cryo_board", config_path=_usbmap(), transport=bus)
     return board, bus
 
 
@@ -126,7 +131,7 @@ def test_present_explains_a_silent_bus():
 
 def test_unknown_label_is_rejected():
     with pytest.raises(ValueError):
-        CryoBoard("not_a_device", config_path=USBMAP)
+        CryoBoard("not_a_device", config_path=_usbmap())
 
 
 # --------------------------------------------------------------------------

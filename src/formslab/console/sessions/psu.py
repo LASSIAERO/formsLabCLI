@@ -1,4 +1,4 @@
-# cli/sessions/psu.py
+# formslab/console/sessions/psu.py
 
 from formslab.console.sessions.base import ConsoleSession, CLIResult
 from formslab.console.psu import psucli
@@ -8,7 +8,7 @@ from rich.text import Text
 class PSUSession(ConsoleSession):
     def __init__(self):
         super().__init__("psu", psucli.execute_command)
-        self.psus = psucli.data
+        self.psus = psucli.psus()
         self.active = next(iter(self.psus), "all")
 
     def help(self):

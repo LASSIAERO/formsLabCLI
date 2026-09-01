@@ -4,6 +4,7 @@ from rich.text import Text
 from formslab.console.sessions.base import CLIResult
 from formslab.console.style import console, TEXT, ERROR, INFO, NUMBER, UNIT, LABEL, STATE_ON, STATE_OFF, SUCCESS, DIM
 from formslab.devices.PSUCLI import PSU
+from formslab.config import usbmap_path
 from formslab.devices.psu_config import enabled_psu_labels
 
 # Load command definitions
@@ -19,15 +20,35 @@ def load_commands():
     except Exception:
         return {}
 
-# Initialize only PSU targets enabled in the shared USB map.
-data = {label: PSU(label) for label in enabled_psu_labels()}
+# Only the PSU targets enabled in the shared USB map, built on first use.
+#
+# Built lazily, not at import: reading the map at import time seeded the config
+# directory as a side effect of `import formslab.console.psu.psucli`, which put
+# a file in the operator's home merely for loading a module.
+#
+# Cached, and not rebuilt per call, because these objects hold the open session:
+# `--connect` followed by `--status` has to reach the same PSU. The cache key is
+# the resolved map path, so pointing $FORMSLAB_CONFIG_DIR at another bench
+# rebuilds instead of serving the previous bench's supplies.
+_psu_cache: dict = {}
+_psu_cache_key = None
+
+
+def psus() -> dict:
+    """The enabled PSU objects, keyed by label."""
+    global _psu_cache, _psu_cache_key
+    key = str(usbmap_path())
+    if key != _psu_cache_key:
+        _psu_cache = {label: PSU(label) for label in enabled_psu_labels()}
+        _psu_cache_key = key
+    return _psu_cache
 
 def status_handler(args, *, target=None):
-    names = data.keys() if target in ("all", None) else [target]
+    names = psus().keys() if target in ("all", None) else [target]
     result = Text()
 
     for name in names:
-        p = data[name]
+        p = psus()[name]
         try:
             p.connect()
             # Device header with identifier
@@ -60,11 +81,11 @@ def status_handler(args, *, target=None):
     return CLIResult(result, clear=True)
 
 def connect_handler(args, *, target=None):
-    names = data.keys() if target in ("all", None) else [target]
+    names = psus().keys() if target in ("all", None) else [target]
     result = Text()
 
     for name in names:
-        p = data[name]
+        p = psus()[name]
         try:
             p.connect()
             result.append("✔ ", SUCCESS)
@@ -89,9 +110,9 @@ def connect_handler(args, *, target=None):
     return CLIResult(result, clear=True)
 
 def disconnect_handler(args, *, target=None):
-    names = data.keys() if target in ("all", None) else [target]
+    names = psus().keys() if target in ("all", None) else [target]
     for name in names:
-        data[name].disconnect()
+        psus()[name].disconnect()
 
     result = Text()
     result.append("✔ ", SUCCESS)
@@ -100,9 +121,9 @@ def disconnect_handler(args, *, target=None):
     return CLIResult(result, clear=True)
 
 def shutdown_handler(args, *, target=None):
-    names = data.keys() if target in ("all", None) else [target]
+    names = psus().keys() if target in ("all", None) else [target]
     for name in names:
-        data[name].shutdown()
+        psus()[name].shutdown()
 
     result = Text()
     result.append("✔ ", SUCCESS)
@@ -111,9 +132,9 @@ def shutdown_handler(args, *, target=None):
     return CLIResult(result, clear=True)
 
 def alloff_handler(args, *, target=None):
-    names = data.keys() if target in ("all", None) else [target]
+    names = psus().keys() if target in ("all", None) else [target]
     for name in names:
-        data[name].alloff()
+        psus()[name].alloff()
 
     result = Text()
     result.append("✔ ", SUCCESS)
@@ -140,7 +161,7 @@ def channel_handler(args, *, target=None):
     if ch < 1 or ch > 3:
         return CLIResult(Text(f"✗ Channel {ch} out of range (valid: 1-3)", style=ERROR), clear=True)
 
-    names = data.keys() if target in ("all", None) else [target]
+    names = psus().keys() if target in ("all", None) else [target]
     result = Text()
 
     if "--set" in args:
@@ -160,7 +181,7 @@ def channel_handler(args, *, target=None):
             return CLIResult(Text(f"✗ Current {a}A out of safe range (0-5A)", style=ERROR), clear=True)
 
         for name in names:
-            p = data[name]
+            p = psus()[name]
             p.set(ch, v, a)
             result.append("✔ ", SUCCESS)
             result.append(name, INFO)
@@ -175,7 +196,7 @@ def channel_handler(args, *, target=None):
 
     if "--on" in args:
         for name in names:
-            p = data[name]; p.on(ch)
+            p = psus()[name]; p.on(ch)
             result.append("✔ ", SUCCESS)
             result.append(name, INFO)
             result.append(" CH", LABEL)
@@ -185,7 +206,7 @@ def channel_handler(args, *, target=None):
 
     if "--off" in args:
         for name in names:
-            p = data[name]; p.off(ch)
+            p = psus()[name]; p.off(ch)
             result.append("✔ ", SUCCESS)
             result.append(name, INFO)
             result.append(" CH", LABEL)
@@ -386,7 +407,7 @@ def help_panel():
     # Device Selection
     result.append("Device Selection:\n", style=TEXT)
     result.append("  --device ", style=LABEL)
-    targets = (*data, "all", "ps")
+    targets = (*psus(), "all", "ps")
     for index, target in enumerate(targets):
         if index:
             result.append(" | ", style=DIM)

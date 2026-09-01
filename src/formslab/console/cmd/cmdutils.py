@@ -1,7 +1,7 @@
 """
 Command file utilities for interactive REPL.
 
-Same IPC pattern as cli/ctrl/ctrlutils.py — reads and writes
+Same IPC pattern as console/ctrl/ctrlutils.py — reads and writes
 cmdfile.json so the GUI (via Tauri) can send eval/exec commands
 to the running Python process.
 
@@ -14,13 +14,20 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 
-CMDFILE = Path("cli/cmd/cmdfile.json")
+from formslab import config
+
+# Resolved per call from the config directory. This was a *relative* path
+# (`cli/cmd/cmdfile.json`), which only ever resolved because `setenv.py` chdir'd
+# into the FORMS checkout first -- from any other working directory it silently
+# read and wrote the wrong file, or none.
+def _cmdfile() -> Path:
+    return config.state_path("cmdfile.json")
 
 
 def _load() -> Dict:
     """Load the command file, returning default if missing."""
     try:
-        with open(CMDFILE, "r") as f:
+        with open(_cmdfile(), "r") as f:
             return json.load(f)
     except Exception:
         return {"command": None, "response": None}
@@ -28,7 +35,7 @@ def _load() -> Dict:
 
 def _save(data: Dict):
     """Atomically write the command file."""
-    with open(CMDFILE, "w") as f:
+    with open(_cmdfile(), "w") as f:
         json.dump(data, f, indent=2)
 
 

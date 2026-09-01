@@ -1,4 +1,4 @@
-# cli/sessions/style.py
+# formslab/console/style.py
 
 try:
     from rich.style import Style

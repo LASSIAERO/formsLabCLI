@@ -1,6 +1,8 @@
 
 from pymodbus.client import ModbusSerialClient
 from pathlib import Path
+
+from formslab.config import usbmap_path
 import subprocess
 import os
 import time
@@ -56,8 +58,7 @@ class SMTC08:
     @staticmethod
     def get_config(name, path=None):
         if path is None:
-            labfolder = Path(__file__).resolve().parent
-            path = labfolder / "usbmap.json"
+            path = usbmap_path()
         else:
             path = Path(path).resolve()
 

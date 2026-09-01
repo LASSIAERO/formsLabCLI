@@ -60,13 +60,27 @@ a library-backed command reports that FORMS is missing instead of raising
 through the REPL. `bridge.SURFACES` is the whole dependency — five read-only
 reporting modules. `test/test_console_bridge.py` enforces both properties.
 
-### Lab configuration
+### Configuration and state
 
-`src/formslab/devices/usbmap.json` is the hardware map: instrument VISA
-addresses and USB VID/PIDs, hub locations, the PowerSwitch host, and the cryo
-board's I2C pins and firmware version. It differs per bench. The PowerSwitch
-password is read from the environment variable named by its `password_env` key,
-never stored in the file.
+Nothing is written inside the installed package. Three locations, by what the
+thing is:
+
+| Location | Holds | Override |
+|---|---|---|
+| package | code, command tables, Pico firmware, shipped defaults | — |
+| config | live `usbmap.json`, CTRL command table, CAST device state | `$FORMSLAB_CONFIG_DIR` (default `~/.formslab`) |
+| output | logs, captured frames, temperature histories | `$FORMSLAB_OUTPUT_DIR` (default `<cwd>/outputs`) |
+
+`usbmap.json` is the hardware map: instrument VISA addresses and USB VID/PIDs,
+hub locations, the PowerSwitch host, and the cryo board's I2C pins and firmware
+version. It differs per bench, so it ships as a default in
+`src/formslab/defaults/` and is copied into the config directory the first time
+a driver asks for it — edit the copy, and an upgrade will not overwrite it. The
+PowerSwitch password is read from the environment variable named by its
+`password_env` key, never stored in the file.
+
+Point `$FORMSLAB_CONFIG_DIR` somewhere else to run a second bench from one
+machine.
 
 ## Tests
 
@@ -81,14 +95,10 @@ else runs against fakes and passes on a bare install with nothing plugged in.
 ## Status
 
 Extracted from the FORMS repository, where this was `python/cli/` +
-`python/lab/`. Two things are not yet reconnected, both marked in the source:
-
-- **`ctrl`'s `run` / `missions`** and **`log`'s tail** reach the sequence host
-  and the `.zen` mission library, which have not moved over yet. They report an
-  empty library rather than launching anything.
-- **Runtime state** (`castfile.json`, `ctrlfile.json`) still lives inside the
-  package. It belongs in a per-user config directory so an installed console is
-  writable on a lab machine.
+`python/lab/`. One thing is not yet reconnected, and it is marked in the source:
+**`ctrl`'s `run` / `missions`** and **`log`'s tail** reach the sequence host and
+the `.zen` mission library, which have not moved over yet. They report an empty
+library rather than launching anything.
 
 ## Relationship to FORMS
 

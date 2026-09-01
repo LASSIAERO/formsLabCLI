@@ -2,13 +2,20 @@ import json
 
 from rich.text import Text
 
+from formslab import config
 from formslab.console.sessions.base import CLIResult
 from formslab.devices import psu_config
 from formslab.devices.PSUCLI import RigolDriverSerial, RigolDriverVISA, driver_for_resource
 
 
-def _write_map(tmp_path):
-    path = tmp_path / "usbmap.json"
+def _write_map():
+    """Write a bench map into the test's own config directory.
+
+    Goes through `config.config_dir()` rather than monkeypatching a module
+    constant: the constant is gone, and this exercises the resolution an
+    operator actually gets. `conftest` redirects the directory per test.
+    """
+    path = config.config_dir() / "usbmap.json"
     path.write_text(
         json.dumps(
             {
@@ -29,15 +36,15 @@ def _write_map(tmp_path):
     return path
 
 
-def test_psu_resource_selects_windows_mapping(monkeypatch, tmp_path):
-    monkeypatch.setattr(psu_config, "USBMAP_PATH", _write_map(tmp_path))
+def test_psu_resource_selects_windows_mapping():
+    _write_map()
 
     assert psu_config.resource_for("psu1", platform="win32") == "ASRLCOM3::INSTR"
     assert psu_config.resource_for("psu1", platform="linux") == "ASRL/dev/psu1::INSTR"
 
 
-def test_disabled_psu_is_not_exposed(monkeypatch, tmp_path):
-    monkeypatch.setattr(psu_config, "USBMAP_PATH", _write_map(tmp_path))
+def test_disabled_psu_is_not_exposed():
+    _write_map()
 
     assert psu_config.enabled_psu_labels() == ("psu1",)
 
@@ -64,7 +71,7 @@ def test_psu_session_returns_only_command_result(monkeypatch):
     from formslab.console.psu import psucli
     from formslab.console.sessions.psu import PSUSession
 
-    monkeypatch.setattr(psucli, "data", {"psu1": object()})
+    monkeypatch.setattr(psucli, "psus", lambda: {"psu1": object()})
     monkeypatch.setattr(
         psucli,
         "execute_command",

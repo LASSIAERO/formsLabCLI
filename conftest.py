@@ -1,4 +1,4 @@
-"""Test collection rules for the lab console.
+"""Test collection rules and per-test isolation for the lab console.
 
 Two groups are excluded from a plain `pytest` run, for two different reasons.
 
@@ -16,6 +16,8 @@ Carried over from the FORMS `conftest.py` quarantine at extraction, minus the
 astrodynamics entries, which stayed with the library.
 """
 
+import pytest
+
 collect_ignore = [
     # hardware -- needs instruments on the bench
     "test/test_CCboard.py",
@@ -28,3 +30,20 @@ collect_ignore = [
     "test/test_slta.py",
     "test/test_smtcpi.py",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _isolated_config_and_output(tmp_path_factory, monkeypatch):
+    """Give every test its own config and output directories.
+
+    Autouse and not optional. The console's config directory defaults to
+    `~/.formslab`, which is an operator's real bench setup: a test that seeds a
+    `usbmap.json`, rewrites CAST state, or drops a heater log there would be
+    editing live lab configuration. Redirecting both env vars means a test run
+    cannot touch anything outside its own tmp dir, and it also exercises the
+    override path itself on every single test.
+    """
+    monkeypatch.setenv("FORMSLAB_CONFIG_DIR",
+                       str(tmp_path_factory.mktemp("formslab-config")))
+    monkeypatch.setenv("FORMSLAB_OUTPUT_DIR",
+                       str(tmp_path_factory.mktemp("formslab-output")))

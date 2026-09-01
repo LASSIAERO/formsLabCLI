@@ -1,4 +1,4 @@
-# cli/sessions/base.py
+# formslab/console/sessions/base.py
 import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass

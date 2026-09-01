@@ -47,13 +47,14 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-# Command tables, help text, and the lab hardware map travel with the code.
-# `usbmap.json` is per-lab configuration that happens to ship a default; Phase 2
-# moves the mutable copy to a real config directory.
+# Command tables, help text, the Pico firmware, and the shipped `defaults/`.
+# Nothing here is written to at runtime: mutable state and the live `usbmap.json`
+# live in the config directory (see formslab/config.py).
 formslab = [
     "console/**/*.json",
     "devices/*.json",
     "devices/pico_board_control.py",
+    "defaults/*",
 ]
 
 [tool.pytest.ini_options]

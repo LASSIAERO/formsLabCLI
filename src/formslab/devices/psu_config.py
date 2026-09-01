@@ -4,13 +4,12 @@ import json
 import sys
 from pathlib import Path
 
-
-USBMAP_PATH = Path(__file__).with_name("usbmap.json")
+from formslab.config import usbmap_path
 
 
 def load_usbmap() -> dict:
     """Load the lab hardware map."""
-    with USBMAP_PATH.open(encoding="utf-8") as stream:
+    with usbmap_path().open(encoding="utf-8") as stream:
         return json.load(stream)
 
 
@@ -31,7 +30,7 @@ def resource_for(label: str, *, platform: str | None = None) -> str:
     config = load_usbmap()
     entry = config.get(label)
     if not isinstance(entry, dict):
-        raise ValueError(f"No USB mapping for PSU tag {label!r} in {USBMAP_PATH}")
+        raise ValueError(f"No USB mapping for PSU tag {label!r} in {usbmap_path()}")
 
     platform = platform or sys.platform
     resource_key = "resource_windows" if platform == "win32" else "resource"
@@ -39,6 +38,6 @@ def resource_for(label: str, *, platform: str | None = None) -> str:
     if not resource:
         raise ValueError(
             f"No valid {resource_key!r} or 'resource' for tag {label!r} "
-            f"in {USBMAP_PATH}"
+            f"in {usbmap_path()}"
         )
     return str(resource)
