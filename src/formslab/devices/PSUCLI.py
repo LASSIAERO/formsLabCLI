@@ -46,7 +46,7 @@ class RigolDriverVISA:
         for attempt in range(retry):
             try:
                 if self.interface != "RS232":
-                    self.inst.clear()
+                    self.clear()
                 return self.inst.query(cmd)
             except Exception:
                 if attempt == retry - 1:

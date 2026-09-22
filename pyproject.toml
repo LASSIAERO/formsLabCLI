@@ -20,6 +20,8 @@ dependencies = [
     "pyvisa",
     "pymodbus",
     "psutil",
+    "pyvisa-py>=0.8.1",
+    "pyusb>=1.3.1",
 ]
 
 [project.scripts]
@@ -31,7 +33,7 @@ fconsole = "formslab.app:main"
 # external-resource registry. Reached only through `formslab/bridge.py`, so
 # without this extra the console still runs and those commands report that
 # FORMS is not installed. FORMS is not on PyPI.
-forms = ["forms @ git+https://github.com/phi-a/FORMS.git#subdirectory=python"]
+# forms = ["forms @ git+https://github.com/phi-a/FORMS.git#subdirectory=python"]
 # The Raspberry Pi Pico that bridges USB to the cryocooler board's I2C bus.
 # `mpremote` is imported lazily inside devices/pico_i2c.py, so the cryo modules
 # import and test without it -- only talking to real hardware needs it.
